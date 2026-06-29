@@ -1,0 +1,30 @@
+{
+  "name": "n8n",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "Jake Rodriguez @ Act!",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "@langchain/aws": "^1.4.2",
+    "@langchain/core": "^1.2.1",
+    "@langchain/openai": "^1.5.3",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.17.1",
+    "express-session": "^1.19.0",
+    "isomorphic-fetch": "^3.0.0",
+    "lodash": "^4.17.21",
+    "luxon": "^1.27.0",
+    "multer": "^2.1.1",
+    "nodemon": "^2.0.15",
+    "zod": "^4.4.3"
+  }
+}
