@@ -65,13 +65,9 @@ export default class Server {
 
     } else {
       
-      if( process.env.NODE_ENV == 'development' ){
-        this.options.key = fs.readFileSync('/etc/letsencrypt/archive/testbot.actagentai.com/privkey1.pem', 'utf8');
-        this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/testbot.actagentai.com/fullchain1.pem', 'utf8');
-      } else
       if( process.env.NODE_ENV === 'production' ){
-        this.options.key = fs.readFileSync('/etc/letsencrypt/archive/actbot.actagentai.com/privkey1.pem', 'utf8');
-        this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/actbot.actagentai.com/fullchain1.pem', 'utf8');
+        this.options.key = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/privkey1.pem', 'utf8');
+        this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/fullchain1.pem', 'utf8');
       }
 
       // this.options.cors.origin = process.env.CORS_ORIGIN.split(',');

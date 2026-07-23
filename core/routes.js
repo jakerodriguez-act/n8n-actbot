@@ -129,7 +129,7 @@ export default class Routes {
 		});
 
 		this.server.app.post("/onedrive/files/move", async(req, res) => {
-
+			
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
         return res.status(403).send('unauthorized access');
@@ -147,9 +147,13 @@ export default class Routes {
 			
 			try {
 				for (const item of files) {
+
+					driveItem.name = item.name;
+
 					const response = await client
-						.api(`/users/${process.env.ONEDRIVE_USER_ID}/drive/items/${item.id}`)
+						.api(`/users/${req.body.od_user_id}/drive/items/${item.id}`)
 						.update(driveItem);
+						
 					moved.push(response);
 				}
 			} catch(error) {
