@@ -20,8 +20,8 @@ export default class Server {
     this.app = express();
 
     // For application/x-www-form-urlencoded
-    this.app.use(express.urlencoded({ extended: true }));
-    this.app.use(bodyParser.json()); // Parses JSON-formatted request bodies
+    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    this.app.use(bodyParser.json({limit: '10mb'})); // Parses JSON-formatted request bodies
     this.app.use(express.static(dirname + '/public/'));
     
     const session_options = {
@@ -65,10 +65,10 @@ export default class Server {
 
     } else {
       
-      if( process.env.NODE_ENV === 'production' ){
-        this.options.key = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/privkey1.pem', 'utf8');
-        this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/fullchain1.pem', 'utf8');
-      }
+      // if( process.env.NODE_ENV === 'production' ){
+      //   this.options.key = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/privkey1.pem', 'utf8');
+      //   this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/fullchain1.pem', 'utf8');
+      // }
 
       // this.options.cors.origin = process.env.CORS_ORIGIN.split(',');
       // this.app.use(cors(this.options.cors));
