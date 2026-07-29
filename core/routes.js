@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
 // import Mailer from '../includes/mailer.js';
+import * as cheerio from 'cheerio';
+
 import path from 'path';
 import fs from 'fs';
 // import { glob } from 'glob';
@@ -8,6 +10,7 @@ import _ from 'lodash';
 import {z} from 'zod';
 import https from 'https';
 import Graph from '../includes/graphapi.js';
+import Handlebars from 'handlebars';
 
 import { 
   HumanMessage, 
@@ -29,7 +32,7 @@ export default class Routes {
 		// Dashboard: REST REQUESTS
 		// --------------------------------------------
 
-		this.server.app.post("/testnode", async(req, res) => {
+		this.server.app.post("/testnode", async (req, res) => {
 			const token = await this.get_bearer_token(req);
 			console.log('token length: ', token.length);
 			if(token == process.env.ACTBOT_BEARER){
@@ -41,7 +44,10 @@ export default class Routes {
       }
 		});
 
-		this.server.app.post("/onedrive/files/read", async(req, res) => {
+		// OneDrive file manipulation
+		// --------------------------------------------
+
+		this.server.app.post("/onedrive/files/read", async (req, res) => {
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
         return res.status(403).send('unauthorized access');
@@ -73,7 +79,7 @@ export default class Routes {
 
 		});
 
-		this.server.app.post("/onedrive/files/download", async(req, res) => {
+		this.server.app.post("/onedrive/files/download", async (req, res) => {
 
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
@@ -128,7 +134,7 @@ export default class Routes {
 			return res.status(200).json({ files: downloaded });
 		});
 
-		this.server.app.post("/onedrive/files/move", async(req, res) => {
+		this.server.app.post("/onedrive/files/move", async (req, res) => {
 			
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
@@ -164,7 +170,7 @@ export default class Routes {
 			return res.status(200).json({'moved': moved});
 		});
 
-		this.server.app.post("/onedrive/excel/append", async(req, res) => {
+		this.server.app.post("/onedrive/excel/append", async (req, res) => {
 
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
@@ -213,7 +219,7 @@ export default class Routes {
 			}
 		});
 
-		this.server.app.post("/onedrive/excel/append/images", async(req, res) => {
+		this.server.app.post("/onedrive/excel/append/images", async (req, res) => {
 
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
@@ -263,7 +269,7 @@ export default class Routes {
 			}
 		});
 
-		this.server.app.post('/ava/render/asset-library', async (req, res) => {
+		this.server.app.post("/ava/render/asset-library", async (req, res) => {
 			
 			const token = await this.get_bearer_token(req);
 			if(token != process.env.ACTBOT_BEARER){
@@ -302,7 +308,7 @@ export default class Routes {
 			return res.status(200).send(asset_library_html);
 		});
 
-		this.server.app.post('/ava/content/focus', async (req, res) => {
+		this.server.app.post("/ava/content/focus", async (req, res) => {
 
 			try {
 
@@ -323,7 +329,7 @@ export default class Routes {
 
 		});
 
-		this.server.app.post('/ava/content/seo', async (req, res) => {
+		this.server.app.post("/ava/content/seo", async (req, res) => {
 			
 			try {
 				const content = req.body.content;
@@ -342,7 +348,7 @@ export default class Routes {
 			}
 		});
 
-		this.server.app.post('/ava/image/alt', async (req, res) => {
+		this.server.app.post("/ava/image/alt", async (req, res) => {
 
 			const { images, content } = req.body;
 
@@ -409,40 +415,84 @@ export default class Routes {
 
 		});
 
-		this.server.app.post("/brave/research/competitor", async(req, res) => {
+		// Competitor Analysis + Brave Search API
+		// --------------------------------------------
 
-			const BLOCKLIST = ['g2.com', 'capterra.com', 'getapp.com', 'softwareadvice.com'];
+		this.server.app.post("/research/what-changed/brave", async (req, res) => {
 
-			const queries = [
-				'HubSpot pricing OR product update OR announcement June 2026',
-				'Zoho CRM product update OR pricing June 2026',
-				'Salesforce release OR Agentforce OR pricing change June 2026',
-				'Pipedrive product update OR pricing OR news June 2026',
-				'Monday.com CRM product update OR pricing June 2026',
-			];
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
 
 			try {
-				const responses = await Promise.allSettled(
-					queries.map(q =>
-						fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5`, {
-							headers: { 'X-Subscription-Token': process.env.BRAVE_API_KEY }
-						}).then(r => r.json())
-					)
-				);
+				const params = new URLSearchParams({
+					q: `${req.body.competitor} pricing OR product update OR announcement intitle: ${req.body.competitor}`,
+					freshness: 'pw',
+					extra_snippets: true,
+					text_decorations: false,
+					count: 5,
+					operators: true,
+					result_filter: 'web,discussions,news',
+					goggles: `! name: Blacklisted sites
+										! description: Sites to ignore
+										! public: true
+										! author: Jacob Ross
+										! avatar: #01e837
 
-				const flattened_results = responses.flatMap(response =>
-					(response.web?.results ?? [])
-						.filter(r => !BLOCKLIST.some(blocked => r.meta_url?.hostname?.includes(blocked)))
-						.map(r => ({
-							title: r.title,
-							url: r.url,
-							description: r.description,
-							age: r.age,
-							source: r.meta_url?.hostname,
-						}))
-				);
+										! Boost official website community sites
+										$boost=4,site=salesforce.com
+										$boost=4,site=hubspot.com
+										$boost=4,site=zoho.com
+										$boost=4,site=monday.com
+										$boost=4,site=insightly.com
+										$boost=4,site=pipedrive.com
+										$boost=4,site=keap.com
 
-				res.status(200).json({ results: flattened_results });
+										! Boost Reddit generally, then boost specific subs harder
+										$boost=2,site=reddit.com
+										/r/hubspot/$boost=4
+										/r/Zoho/$boost=4
+										/r/mondaydotcom/$boost=4
+										/r/InsightlyCRM/$boost=4
+										/r/keap/$boost=4
+										/r/pipedrive/$boost=4
+										/r/CRM/$boost=3
+										/r/CRMSoftware/$boost=3
+										/r/sales/$boost=3
+										/r/smallbusiness/$boost=3
+										/r/salesforce/$boost=3
+
+										! Boost Hacker News (often has candid competitor takes on API/dev experience)
+										$boost=2,site=news.ycombinator.com
+
+										! Discard bias sites
+										$discard,site=g2.com
+										$discard,site=capterra.com
+										$discard,site=getapp.com
+										$discard,site=softwareadvice.com
+										$discard,site=trustradius.com
+										$discard,site=facebook.com
+										$discard,site=x.com
+										$discard,site=instagram.com
+										$discard,site=wikipedia.org`
+				});
+
+				const data = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
+					method: 'get',
+					headers: {
+						'X-Subscription-Token': process.env.BRAVE_API_KEY,
+						'Accept-Encoding': 'gzip',
+					}
+				}).then(r => r.json());
+
+				let research = [
+					...(data.web?.results ?? []),
+					...(data.discussions?.results ?? []),
+					...(data.news?.results ?? []),
+				];
+				
+				res.status(200).json({ research });
 
 			} catch (err) {
 				console.error('Research fetch error:', err);
@@ -450,7 +500,602 @@ export default class Routes {
 			}
 		});
 
-		this.server.app.post("/bedrock/invoke/weekly-brief", async(req, res) => {
+		this.server.app.post("/research/what-changed/row", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+				let crm 		= req.body.crm;
+				let research = req.body.research;
+				let result 	= req.body.research[0];
+				let color 	= '#FF7A59';
+
+				switch(crm){
+					case 'HubSpot':
+						color = '#FF7A59';
+						break;
+					case 'Zoho':
+						color = '#E42527';
+						break;
+					case 'Salesforce':
+						color = '#00A1E0';
+						break;
+					case 'Keap':
+						color = '#36A635';
+						break;
+					case 'Pipedrive':
+						color = '#1A8000';
+						break;
+					case 'Monday.com':
+						color = '#FF3D57';
+						break;
+					case 'Insightly CRM':
+						break;
+				}
+
+				const timestamp = result.page_age;
+				const date = new Date(timestamp).toLocaleDateString('en-US', {
+					month: 'long',
+					day: 'numeric'
+				});
+
+				const tfile = fs.readFileSync('./templates/competitor-row.hbs', 'utf8');
+				const template = Handlebars.compile(tfile);
+				let html = template({ crm, result, color, date });
+
+				html = html.replace(`\n`, '');
+
+				return res.status(200).json({ html, research });
+
+			} catch(err){
+				console.log(err);
+				return res.status(500).json({error: err});
+			}
+			
+		});
+
+		this.server.app.post("/research/what-changed/html", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+			
+			let rows = req.body.rows;
+
+			let today = new Date().toLocaleDateString('en-US', {
+					month: 'long',
+					day: 'numeric',
+					year: 'numeric'
+			});
+
+			let next_week = new Date();
+					next_week.setDate(next_week.getDate() + 7);
+					next_week = next_week.toLocaleDateString('en-US', {
+						month: 'long',
+						day: 'numeric'
+					});
+
+			try {
+				const source = fs.readFileSync('./templates/competitor-full.hbs', 'utf8');
+				const template = Handlebars.compile(source);
+				const html = template({ rows, today, next_week });
+
+				return res.status(200).json({ html });
+			} catch(err) {
+				console.error('Formatting error: ', err);
+				return res.status(500).json({ error: err.message });
+			}
+
+		});
+
+		this.server.app.post("/research/what-changed/update", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+
+				let updated_briefing = req.body.updated_briefing;
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'get',
+					headers: {
+						'Accept':'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				if( !response.ok )
+					return res.status(500).json({'err': 'Unable to get competitor briefing from the point'});
+
+				let outdated_briefing = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( outdated_briefing );
+				
+				// replace the old card HTML with the updated briefing HTML
+				$('#sec-exec #what-changed.card').html(updated_briefing);
+
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-exec').parent().html();
+
+				response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'post',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				if( !response.ok )
+					return res.status(500).json({'err': 'Unable to updated competitor briefing on the point'});
+
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == 200){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
+
+
+		});
+
+		// Priorities Section
+		// --------------------------------------------
+
+		this.server.app.post("/research/priorities/ai", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			let research = req.body.research;
+
+			if( !research )
+				return res.status(400).json({ error: 'Missing research' });
+
+			let context = research.map( r => {
+				return r.map( re => {
+					return re.description + `\n\n` + (re.extra_snippets ? re.extra_snippets.join(`\n`) : '');
+				})
+			});
+
+			try {
+
+				// use Ai to come up with 4 key action items
+				const PrioritiesSchema = z.object({
+					sales_rep: z.string().describe("What should sales reps be focusing on?"),
+					product_marketing: z.string().describe("How should we be marketing our product?"),
+					customer_marketing: z.string().describe("Where should we be looking for more customers?"),
+					leadership: z.string().describe("How should leadership adapt their approach to meet the shifting market?"),
+				});
+
+				const modelWithStructure = this.model.openai.withStructuredOutput(PrioritiesSchema);
+
+				const response = await modelWithStructure.invoke([
+					new SystemMessage(`You are a marketing expert consulting Act! and your task is to advise Act! on competitive strategy to help Act! stand-out from the other competitors including Salesforce, HubSpot, Keap, Insightly CRM, Zoho, Pipedrive, Monday.com.`),
+					new HumanMessage(`Based on the following research results, provide one concise, actionable priority for each of the four audiences below.\n\nResearch results:\n\n${context}`)
+				]);
+
+				// response is already parsed — { sales_rep, product_marketing, customer_marketing, leadership }
+				return res.status(200).json({ response });
+
+			} catch(err) {
+				console.log(err);
+				return res.status(500).json({ error: err.message });
+			}
+		});
+
+		this.server.app.post("/research/priorities/html", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			let response = req.body.response;
+
+			try {
+
+				const source = fs.readFileSync('./templates/priorities.hbs', 'utf8');
+				const template = Handlebars.compile(source);
+				const html = template({ response });
+				return res.status(200).json({ html });
+
+			} catch(err) {
+
+				console.error('Formatting error: ', err);
+				return res.status(500).json({ error: err.message });
+			}
+		});
+
+		this.server.app.post("/research/priorities/update", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+
+				let updated_priorities = req.body.updated_priorities;
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'get',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				let outdated_priorities = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( outdated_priorities );
+				
+				// replace the old card HTML with the updated priorities HTML
+				$('#sec-exec #priorities').html(updated_priorities);
+
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-exec').parent().html();
+
+				response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'post',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == '200'){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
+
+		});
+
+		// Watching Section
+		this.server.app.post("/research/watching/ai", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			let research = req.body.research;
+
+			if( !research )
+				return res.status(400).json({ error: 'Missing research' });
+
+			let context = research.map( r => {
+				return r.map( re => {
+					return re.description + `\n\n` + (re.extra_snippets ? re.extra_snippets.join(`\n`) : '');
+				})
+			});
+
+			try {
+
+				// use Ai to come up with 4 key action items
+				const PrioritiesSchema = z.object({
+					hubspot: z.string().describe("What the latest with HubSpot?"),
+					zoho: z.string().describe("What the latest with Zoho?"),
+					keap: z.string().describe("What the latest with Keap?"),
+					pipedrive: z.string().describe("What the latest with Pipedrive?"),
+					monday: z.string().describe("What the latest with Monday.com?"),
+					insightly: z.string().describe("What the latest with Insightly CRM?"),
+				});
+
+				const modelWithStructure = this.model.openai.withStructuredOutput(PrioritiesSchema);
+
+				const response = await modelWithStructure.invoke([
+					new SystemMessage(`You are a SaaS expert who specializes in keeping up with the latest news and announcements with CRM software. Your task is to provide one concise statement describing what's new with each CRM including Salesforce, HubSpot, Keap, Insightly CRM, Zoho, Pipedrive, Monday.com.`),
+					new HumanMessage(`Based on the following research results, provide one concise sentence describing what's new with each CRM.\n\nResearch results:\n\n${context}`)
+				]);
+
+				// response is already parsed — { sales_rep, product_marketing, customer_marketing, leadership }
+				return res.status(200).json({ response });
+
+			} catch(err) {
+				console.log(err);
+				return res.status(500).json({ error: err.message });
+			}
+		});
+
+		this.server.app.post("/research/watching/html", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			let response = req.body.response;
+
+			try {
+				let vendors = []
+				
+				for (const key in response) {
+					if (response.hasOwnProperty(key)) {
+						vendors.push({vendor: this.ucFirst(key), update: response[key]});
+					}
+				}
+
+				const source = fs.readFileSync('./templates/watching.hbs', 'utf8');
+				const template = Handlebars.compile(source);
+				const html = template({ vendors });
+				return res.status(200).json({ html });
+
+			} catch(err) {
+
+				console.error('Formatting error: ', err);
+				return res.status(500).json({ error: err.message });
+			}
+		});
+
+		this.server.app.post("/research/watching/update", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+
+				let updated_watching = req.body.updated_watching;
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'get',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				let outdated_watching = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( outdated_watching );
+				
+				// replace the old card HTML with the updated watching HTML
+				$('#sec-exec #watching').html(updated_watching);
+
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-exec').parent().html();
+
+				response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'post',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == '200'){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
+		});
+
+		// Coming Up
+		this.server.app.post("/research/upcoming/brave", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+				const params = new URLSearchParams({
+					q: `${req.body.competitor} anticipated updates OR anticipated releases OR anticipated price changes intitle: ${req.body.competitor}`,
+					freshness: 'pw',
+					extra_snippets: true,
+					text_decorations: false,
+					count: 5,
+					operators: true,
+					result_filter: 'web,discussions,news',
+					goggles: `! name: Blacklisted sites
+										! description: Sites to ignore
+										! public: true
+										! author: Jacob Ross
+										! avatar: #01e837
+
+										! Boost official website community sites
+										$boost=4,site=salesforce.com
+										$boost=4,site=hubspot.com
+										$boost=4,site=zoho.com
+										$boost=4,site=monday.com
+										$boost=4,site=insightly.com
+										$boost=4,site=pipedrive.com
+										$boost=4,site=keap.com
+
+										! Boost Reddit generally, then boost specific subs harder
+										$boost=2,site=reddit.com
+										/r/hubspot/$boost=4
+										/r/Zoho/$boost=4
+										/r/mondaydotcom/$boost=4
+										/r/InsightlyCRM/$boost=4
+										/r/keap/$boost=4
+										/r/pipedrive/$boost=4
+										/r/CRM/$boost=3
+										/r/CRMSoftware/$boost=3
+										/r/sales/$boost=3
+										/r/smallbusiness/$boost=3
+										/r/salesforce/$boost=3
+
+										! Boost Hacker News (often has candid competitor takes on API/dev experience)
+										$boost=2,site=news.ycombinator.com
+
+										! Discard bias sites
+										$discard,site=g2.com
+										$discard,site=capterra.com
+										$discard,site=getapp.com
+										$discard,site=softwareadvice.com
+										$discard,site=trustradius.com
+										$discard,site=facebook.com
+										$discard,site=x.com
+										$discard,site=instagram.com
+										$discard,site=wikipedia.org`
+				});
+
+				const data = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
+					method: 'get',
+					headers: {
+						'X-Subscription-Token': process.env.BRAVE_API_KEY,
+						'Accept-Encoding': 'gzip',
+					}
+				}).then(r => r.json());
+
+				let research = [
+					...(data.web?.results ?? []),
+					...(data.discussions?.results ?? []),
+					...(data.news?.results ?? []),
+				];
+				
+				res.status(200).json({ research });
+
+			} catch (err) {
+				console.error('Research fetch error:', err);
+				res.status(500).json({ error: err.message });
+			}
+		});
+
+		this.server.app.post("/research/upcoming/row", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+			
+			try {
+				let crm 		 = req.body.crm;
+				let research = req.body.research;
+				let result 	 = req.body.research[0];
+
+				const tfile = fs.readFileSync('./templates/upcoming.hbs', 'utf8');
+				const template = Handlebars.compile(tfile);
+				let html = template({ result });
+
+				html = html.replace(`\n`, '');
+
+				return res.status(200).json({ html });
+
+			} catch(err){
+				console.log(err);
+				return res.status(500).json({error: err});
+			}
+		});
+
+		this.server.app.post("/research/upcoming/update", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+
+				let updated_upcoming = req.body.updated_upcoming;
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'get',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				let outdated_upcoming = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( outdated_upcoming );
+				
+				// replace the old card HTML with the updated upcoming HTML
+				$('#sec-exec #upcoming').html(updated_upcoming);
+
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-exec').parent().html();
+
+				response = await fetch(`${domain}/actrest/hub/competitor_briefing`, {
+					method: 'post',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == '200'){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
+		});
+
+		this.server.app.post("/bedrock/invoke/weekly-brief", async (req, res) => {
+			
 			try {
 				const context = req.body.context;
 				const system_prompt = fs.readFileSync('./system_prompts/weekly-brief.txt', 'utf8');
@@ -614,5 +1259,8 @@ export default class Routes {
 	escapeAttr(str) {
 		return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 	}
-	
+	ucFirst(str) {
+		if (!str) return str;
+		return str.charAt(0).toUpperCase() + str.slice(1);
+	}
 }

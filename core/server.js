@@ -65,14 +65,14 @@ export default class Server {
 
     } else {
       
-      // if( process.env.NODE_ENV === 'production' ){
-      //   this.options.key = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/privkey1.pem', 'utf8');
-      //   this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/fullchain1.pem', 'utf8');
-      // }
+      if( process.env.NODE_ENV === 'production' ){
+        this.options.key = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/privkey1.pem', 'utf8');
+        this.options.cert = fs.readFileSync('/etc/letsencrypt/archive/n8n.actaiserver.com/fullchain1.pem', 'utf8');
+      }
 
       // this.options.cors.origin = process.env.CORS_ORIGIN.split(',');
       // this.app.use(cors(this.options.cors));
-      this.server = createHttpsServer(this.options, this.app);
+      this.server = createHttpServer(this.options, this.app);
 
       this.server.listen(process.env.PORT, () => {
         console.log(`server running on PORT: ${process.env.PORT}`);
