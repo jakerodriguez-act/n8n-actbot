@@ -600,7 +600,7 @@ export default class Routes {
 			}
 
 			try {
-
+				
 				let updated_briefing = req.body.updated_briefing;
 
 				let domain = `https://thepoint.act.com`;
@@ -624,7 +624,7 @@ export default class Routes {
 				let outdated_briefing = await response.json();
 
 				// Manipulate the HTML with Cheerio
-				var $ = cheerio.load( outdated_briefing );
+				var $ = cheerio.load( outdated_briefing.html );
 				
 				// replace the old card HTML with the updated briefing HTML
 				$('#sec-exec #what-changed.card').html(updated_briefing);
@@ -676,9 +676,7 @@ export default class Routes {
 				return res.status(400).json({ error: 'Missing research' });
 
 			let context = research.map( r => {
-				return r.map( re => {
-					return re.description + `\n\n` + (re.extra_snippets ? re.extra_snippets.join(`\n`) : '');
-				})
+				return r.description + `\n\n` + (r.extra_snippets ? r.extra_snippets.join(`\n`) : '')
 			});
 
 			try {
@@ -759,7 +757,7 @@ export default class Routes {
 				let outdated_priorities = await response.json();
 
 				// Manipulate the HTML with Cheerio
-				var $ = cheerio.load( outdated_priorities );
+				var $ = cheerio.load( outdated_priorities.html );
 				
 				// replace the old card HTML with the updated priorities HTML
 				$('#sec-exec #priorities').html(updated_priorities);
@@ -804,9 +802,7 @@ export default class Routes {
 				return res.status(400).json({ error: 'Missing research' });
 
 			let context = research.map( r => {
-				return r.map( re => {
-					return re.description + `\n\n` + (re.extra_snippets ? re.extra_snippets.join(`\n`) : '');
-				})
+				return r.description + `\n\n` + (r.extra_snippets ? r.extra_snippets.join(`\n`) : '');
 			});
 
 			try {
@@ -896,7 +892,7 @@ export default class Routes {
 				let outdated_watching = await response.json();
 
 				// Manipulate the HTML with Cheerio
-				var $ = cheerio.load( outdated_watching );
+				var $ = cheerio.load( outdated_watching.html );
 				
 				// replace the old card HTML with the updated watching HTML
 				$('#sec-exec #watching').html(updated_watching);
@@ -1064,7 +1060,7 @@ export default class Routes {
 				let outdated_upcoming = await response.json();
 
 				// Manipulate the HTML with Cheerio
-				var $ = cheerio.load( outdated_upcoming );
+				var $ = cheerio.load( outdated_upcoming.html );
 				
 				// replace the old card HTML with the updated upcoming HTML
 				$('#sec-exec #upcoming').html(updated_upcoming);
