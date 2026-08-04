@@ -9,6 +9,7 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { DateTime } from 'luxon';
 import session from 'express-session';
+import hbs from 'express-handlebars';
 
 export default class Server {
   // --------------------------------------------
@@ -41,6 +42,40 @@ export default class Server {
     // Handlebars templating
     this.app.set('view engine', 'hbs');
     this.app.set(dirname + '/views/');
+    this.app.engine( 'hbs', hbs({ 
+      extname: 'hbs',
+      partialsDir: path.join(dirname, '/includes/views/partials/'),
+      helpers: {
+        PST_time: function (timestamp) {
+          const ms = Number(timestamp);
+          if (!Number.isFinite(ms)) return '';
+          return DateTime
+            .fromMillis(ms)
+            .setZone('America/Los_Angeles')
+            .toFormat("MMM d, yyyy\nh:mm:ss a");
+        },
+        nl2br: function(text){
+          if (!text) return '';
+          const escaped = Handlebars.escapeExpression(text);
+          const withBreaks = escaped.replace(/\r?\n/g, '<br>');
+          return new Handlebars.SafeString(withBreaks);
+        },
+        Uppercase: function(string) {
+          if( string )
+            return string.toUpperCase();
+        },
+        ifCond: function (v1, operator, v2, options) {
+          const operators = {
+            '==': (a, b) => a == b, '===': (a, b) => a === b,
+            '!=': (a, b) => a != b, '!==': (a, b) => a !== b,
+            '<': (a, b) => a < b, '<=': (a, b) => a <= b,
+            '>': (a, b) => a > b, '>=': (a, b) => a >= b,
+            '&&': (a, b) => a && b, '||': (a, b) => a || b
+          };
+          return operators[operator](v1, v2) ? options.fn(this) : options.inverse(this);
+        }
+      }
+    }));
 
     this.port = process.env.PORT;
 

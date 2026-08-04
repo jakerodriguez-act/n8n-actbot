@@ -269,45 +269,6 @@ export default class Routes {
 			}
 		});
 
-		this.server.app.post("/ava/render/asset-library", async (req, res) => {
-			
-			const token = await this.get_bearer_token(req);
-			if(token != process.env.ACTBOT_BEARER){
-        return res.status(403).send('unauthorized access');
-			}
-
-			const od_user_id = req.body.od_user_id;
-			const od_folder_id  = req.body.od_folder_id;
-
-			let folders = await this.fetch_onedrive(od_user_id, od_folder_id);
-
-			const folder_categories = this.buildCategoryMap(folders);
-
-			const folder_slugs = Object.values(folder_categories);
-
-			const folder_names = Object.keys(folder_categories);
-
-			const asset_library_html =
-				await Promise.all(folders.map(async (folder, folderIndex) => {
-
-					const category_list_items = await this.fetchAllFiles(od_user_id, folder.id);
-
-					const category_list_html = await Promise.all(category_list_items.map(async (asset) => {
-						asset.label = folder_names[folderIndex];
-						return this.buildHubListItem(asset);
-					}));
-
-					return `<div id="${folder_slugs[folderIndex]}" class="hubList-category">
-						${category_list_html}
-					</div>`;
-				}));
-			
-			// const template = fs.readFileSync('./templates/asset-library.html', 'utf8');
-			// const rendered = this.renderTemplate(template, assets);
-			// res.status(200).send(rendered);
-			return res.status(200).send(asset_library_html);
-		});
-
 		this.server.app.post("/ava/content/focus", async (req, res) => {
 
 			try {
@@ -1215,6 +1176,117 @@ export default class Routes {
 				res.status(500).json({ error: err.message });
 			}
 		});
+
+		// Asset Library
+
+		this.server.app.post("/resources/asset-library/html", async (req, res) => {
+			
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			const od_user_id = req.body.od_user_id;
+			const od_folder_id  = req.body.od_folder_id;
+
+			let folders = await this.fetch_onedrive(od_user_id, od_folder_id);
+
+			let folder_categories = this.buildCategoryMap(folders);
+
+			const folder_slugs = Object.values(folder_categories);
+
+			const folder_names = Object.keys(folder_categories);
+
+			folder_categories = folder_slugs.map( (slug, i) => {
+				let name = folder_names[i];
+				return { name, slug };
+			})
+
+			const asset_library_html =
+				await Promise.all(folders.map(async (folder, folderIndex) => {
+
+					const category_list_items = await this.fetchAllFiles(od_user_id, folder.id);
+
+					const category_list_html = await Promise.all(category_list_items.map(async (asset) => {
+						asset.label = folder_names[folderIndex];
+						return this.buildHubListItem(asset);
+					}));
+
+					return `<div id="${folder_slugs[folderIndex]}" class="hubList-category">
+						${category_list_html.join('')}
+					</div>`;
+				}));
+
+			let source = fs.readFileSync('./templates/asset-buttons.hbs', 'utf8');
+			let template = Handlebars.compile(source);
+			const buttons = template({ folders: folder_categories });
+				
+			source = fs.readFileSync('./templates/asset-folders.hbs', 'utf8');
+			template = Handlebars.compile(source);
+			const library = template({ assets: asset_library_html.join('') });
+			
+			return res.status(200).json({buttons, library});
+		});
+
+		this.server.app.post("/resources/asset-library/update", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/asset_library`, {
+					method: 'get',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				let asset_library = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( asset_library.html );
+				
+				// replace the old card HTML with the updated upcoming HTML
+				$('#sec-hub #hubCatTabs').html(req.body.buttons);
+				$('#sec-hub #hubList').html(req.body.folders);
+				$('#sec-hub #hubList #archive').remove();
+				$('#sec-hub #hubCatTabs button.archive').remove()
+
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-hub').parent().html();
+
+				response = await fetch(`${domain}/actrest/hub/asset_library`, {
+					method: 'post',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == '200'){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
+		});
 	}
 
 	async fetchAllFiles(od_user_id, folder_id) {
@@ -1294,7 +1366,6 @@ export default class Routes {
 	}
 	
 	buildHubListItem(asset) {
-
 		const isNew = this.isWithinDays(asset.lastModifiedDateTime, 30);
 		const newPill = isNew ? `<span class="hubList-new">NEW</span>` : '';
 		const dateLabel = this.formatDate(asset.lastModifiedDateTime);
@@ -1339,7 +1410,7 @@ export default class Routes {
 	}
 
 	isWithinDays(dateStr, days) {
-		return (Date.now() - new Date(dateStr).getTime()) < days * 86400000;
+		return (Date.now() - new Date(dateStr).getTime()) < (days * 86400000);
 	}
 
 	formatDate(dateStr) {
@@ -1355,6 +1426,7 @@ export default class Routes {
 	escapeAttr(str) {
 		return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 	}
+
 	ucFirst(str) {
 		if (!str) return str;
 		return str.charAt(0).toUpperCase() + str.slice(1);
