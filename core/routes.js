@@ -641,7 +641,7 @@ export default class Routes {
 
 				let html = `<div class="bc-fullwidth" style=" display: grid; border: 1px solid #e0e4f0; border-top: none; "> 
 					<div id="${crm.toLowerCase()}" class="bc-cell talking-points"> 
-					<div class="bc-cell-title"><img draggable="false" role="img" class="emoji" alt="💬" src="https://s.w.org/images/core/emoji/17.0.2/svg/1f4ac.svg"> SALES STRATEGY</div>
+					<div class="bc-cell-title"><img role="img" style="width: 19px; height: auto; margin-left: -3px;" alt="💬" src="https://thepoint.act.com/wp-content/uploads/list-aistars.png"> SALES STRATEGY <span style="font-size: 12px; font-weight: normal">powered by Ava</span></div>
 					${talking_points} </div> </div>`;
 
 				return res.status(200).json({crm, html});
