@@ -426,8 +426,14 @@ export default class Routes {
 			}
 
 			try {
+
+				let crm = req.body.competitor;
+
+				if( crm.toLowerCase() == 'insightly' )
+					crm = 'insightly crm';
+
 				const params = new URLSearchParams({
-					q: `${req.body.competitor} pricing OR product update OR announcement intitle: ${req.body.competitor}`,
+					q: `${crm} pricing OR product update OR announcement intitle: ${crm}`,
 					freshness: 'pw',
 					extra_snippets: true,
 					text_decorations: false,
@@ -657,6 +663,100 @@ export default class Routes {
 				return res.status(500).json({error: err})
 			}
 
+
+		});
+
+		// Competitor Analysis + Ava Knowledge
+		this.server.app.post("/research/talking-points/html", async(req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			let crm = req.body.crm.toLowerCase();
+			let talking_points = req.body.talking_points;
+			try {
+
+				let html = `<div class="bc-fullwidth" style=" display: grid; border: 1px solid #e0e4f0; border-top: none; "> 
+					<div id="${crm.toLowerCase()}" class="bc-cell talking-points"> 
+					<div class="bc-cell-title"><img draggable="false" role="img" class="emoji" alt="💬" src="https://s.w.org/images/core/emoji/17.0.2/svg/1f4ac.svg"> SALES STRATEGY</div>
+					${talking_points} </div> </div>`;
+
+				return res.status(200).json({crm, html});
+			} catch(err){
+				return res.status(500).json({'error' : err});
+			}
+		});
+
+		this.server.app.post("/research/talking-points/update", async (req, res) => {
+
+			const token = await this.get_bearer_token(req);
+			if(token != process.env.ACTBOT_BEARER){
+        return res.status(403).send('unauthorized access');
+			}
+
+			try {
+				
+				let crm = req.body.crm;
+				let talking_points = req.body.talking_points;
+
+				let domain = `https://thepoint.act.com`;
+
+				if( process.env.NODE_ENV == 'localhost' ){
+					domain = `http://ddev-actpoint-web`;
+				}
+
+				// Get the outdated version of the briefing
+				let response = await fetch(`${domain}/actrest/hub/battlecards`, {
+					method: 'get',
+					headers: {
+						'Accept':'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					}
+				});
+
+				if( !response.ok )
+					return res.status(500).json({'err': 'Unable to get competitor briefing from the point'});
+
+				let battlecards = await response.json();
+
+				// Manipulate the HTML with Cheerio
+				var $ = cheerio.load( battlecards.html );
+
+				// replace the old card HTML with the updated briefing HTML
+				$(`#sec-battlecards .talking-points`).remove();
+
+				for( var x = 0; x<crm.length; x++ ){
+					$(`#sec-battlecards #bc-${crm[x]} .bc-fullwidth`).remove();
+					$(`#sec-battlecards #bc-${crm[x]}`).append(talking_points[x]);
+				}
+				// Send the entire #sec-exec container with updated HTML to update endpoing
+				let full_html = $('#sec-battlecards').parent().html();
+				
+				response = await fetch(`${domain}/actrest/hub/battlecards`, {
+					method: 'post',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+					},
+					body: JSON.stringify({ html: full_html }),
+				});
+
+				if( !response.ok )
+					return res.status(500).json({'err': 'Unable to updated battlecards on the point'});
+
+				let update_response = await response.json();
+
+				if(update_response.data.status == 200){
+					return res.status(200).json({status: 'success', updated: update_response.data});
+				}
+
+				return res.status(500).json({error: update_response.message});
+
+			} catch(err){
+				return res.status(500).json({error: err})
+			}
 
 		});
 
