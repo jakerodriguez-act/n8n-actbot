@@ -11,6 +11,8 @@ import {z} from 'zod';
 import https from 'https';
 import Graph from '../includes/graphapi.js';
 import Handlebars from 'handlebars';
+import multer from 'multer';
+import AdmZip from 'adm-zip';
 
 import { 
   HumanMessage, 
@@ -377,8 +379,6 @@ export default class Routes {
 		});
 
 		// Competitor Analysis + Brave Search API
-		// --------------------------------------------
-
 		this.server.app.post("/research/what-changed/brave", async (req, res) => {
 
 			const token = await this.get_bearer_token(req);
@@ -722,8 +722,6 @@ export default class Routes {
 		});
 
 		// Priorities Section
-		// --------------------------------------------
-
 		this.server.app.post("/research/priorities/ai", async (req, res) => {
 
 			const token = await this.get_bearer_token(req);
@@ -1178,7 +1176,6 @@ export default class Routes {
 		});
 
 		// Asset Library
-
 		this.server.app.post("/resources/asset-library/html", async (req, res) => {
 			
 			const token = await this.get_bearer_token(req);
@@ -1287,6 +1284,114 @@ export default class Routes {
 				return res.status(500).json({error: err})
 			}
 		});
+
+		// Training Companion
+		const pack_upload = multer({
+			storage: multer.memoryStorage(),
+			limits: { fileSize: 100 * 1024 * 1024 }
+		});
+
+		this.server.app.post("/training-companion/upload", pack_upload.single('pack'), async (req, res) => {
+			const token = await this.get_bearer_token(req);
+
+			if(token != process.env.ACTBOT_BEARER){
+				return res.status(403).send('unauthorized access');
+			}
+
+			if( !req.file ){
+				return res.status(400).json({error: 'No pack file received'});
+			}
+
+			try {
+
+				const pack = this.read_training_companion_pack(req.file.buffer);
+
+				if( !pack.html ){
+					return res.status(400).json({error: 'No .html file found in the pack'});
+				}
+
+				const domain = this.get_act_wp_domain();
+
+				// Upload the images in batches (PHP's max_file_uploads defaults to 20)
+				let uploaded = [];
+				let image_errors = [];
+
+				for( const batch of _.chunk(pack.images, 20) ){
+
+					const form = new FormData();
+					for( const image of batch ){
+						form.append('images[]', new Blob([image.buffer]), image.name);
+					}
+
+					let response = await fetch(`${domain}/actrest/post/training-companion-images`, {
+						method: 'post',
+						headers: {
+							'Accept': 'application/json',
+							'Authorization': `Bearer ${process.env.ACT_REST_TOKEN}`
+						},
+						body: form
+					});
+
+					let result = await response.json();
+
+					if( result.status != 'success' ){
+						return res.status(500).json({error: result.message, details: result.error});
+					}
+
+					uploaded.push(...result.data.uploaded);
+					image_errors.push(...result.data.errors);
+				}
+
+				const n8n_domain = process.env.NODE_ENV == 'localhost' ? 'http://n8n-interface:5678' : 'https://n8n.actaiserver.com';
+
+
+				var $ = cheerio.load( pack.html );
+				
+				let title = $('head title').text();
+				// replace the old card HTML with the updated briefing HTML
+				const date = new Date();
+				const month = String(date.getMonth() + 1).padStart(2, '0');
+				const year = date.getFullYear();
+				$('img').each( (i, t) => {
+					let src = $(t).attr('src');
+					src = src.replace('images/', '');
+					src = process.env.NODE_ENV == 'localhost' ? `http://act-main.ddev.site/wp-content/uploads/${year}/${month}/${src}` : `https://www.act.com/wp-content/uploads/${year}/${month}/${src}`;
+					$(t).attr('src', src);
+				});
+				
+				const style = $('head style').text();
+
+				let html = `<style>${style}</style>` + $('body').html();
+
+				let response = await fetch(`${n8n_domain}/webhook-test/fc844f15-ea34-4a25-8225-dbaae5cf6fbd/training-companion`, {
+					method: 'post',
+					headers: {
+						'Accept': 'application/json',
+						'Authorization': `Bearer ` + process.env.N8N_BEARER
+					},
+					body: new URLSearchParams({ html, title })
+				});
+
+				// let result = await response.json();
+
+				// if( result.status != 'success' ){
+				// 	return res.status(500).json({error: result.message, details: result.error, image_errors});
+				// }
+
+				return res.status(200).json({
+					status: 'success'
+					// post_id: result.data.post_id,
+					// edit_url: result.data.edit_url,
+					// images_uploaded: uploaded.length,
+					// image_errors
+				});
+
+			} catch(err){
+				console.error('Training Companion upload error: ', err);
+				return res.status(500).json({error: err.message});
+			}
+		})
+
 	}
 
 	async fetchAllFiles(od_user_id, folder_id) {
@@ -1319,6 +1424,48 @@ export default class Routes {
 
 	send_to_email(){
 
+	}
+
+	get_act_wp_domain(){
+		if( process.env.NODE_ENV == 'localhost' ){
+			return `http://ddev-act-main-web`;
+		}
+		return process.env.ACT_WP_DOMAIN || `https://www.act.com`;
+	}
+
+	// Reads the zip in memory (nothing is extracted to disk) and returns the
+	// first .html file plus every file inside an images/ folder.
+	read_training_companion_pack(buffer){
+		const zip = new AdmZip(buffer);
+		const image_ext = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+		const max_total_size = 500 * 1024 * 1024;
+
+		let html = null;
+		let images = [];
+		let total_size = 0;
+
+		for( const entry of zip.getEntries() ){
+
+			// skip folders and macOS metadata (__MACOSX/, ._file)
+			if( entry.isDirectory || entry.entryName.includes('__MACOSX/') || path.basename(entry.entryName).startsWith('._') )
+				continue;
+
+			total_size += entry.header.size;
+			if( total_size > max_total_size ){
+				throw new Error('Pack is too large once unzipped');
+			}
+
+			const ext = path.extname(entry.entryName).toLowerCase();
+
+			if( !html && (ext == '.html' || ext == '.htm') ){
+				html = entry.getData().toString('utf8');
+			}
+			else if( entry.entryName.split('/').includes('images') && image_ext.includes(ext) ){
+				images.push({ name: path.basename(entry.entryName), buffer: entry.getData() });
+			}
+		}
+
+		return { html, images };
 	}
 
 	async get_bearer_token(req){
