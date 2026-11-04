@@ -1363,7 +1363,7 @@ export default class Routes {
 
 				let html = `<style>${style}</style>` + $('body').html();
 
-				let response = await fetch(`${n8n_domain}/webhook-test/fc844f15-ea34-4a25-8225-dbaae5cf6fbd/training-companion`, {
+				let response = await fetch(`${n8n_domain}/webhook/fc844f15-ea34-4a25-8225-dbaae5cf6fbd/training-companion`, {
 					method: 'post',
 					headers: {
 						'Accept': 'application/json',
