@@ -1316,7 +1316,7 @@ export default class Routes {
 				$('img').each( (i, t) => {
 					let src = $(t).attr('src');
 					src = src.replace('images/', '');
-					src = process.env.NODE_ENV == 'localhost' ? `https://act-main.ddev.site/wp-content/uploads/${year}/${month}/${src}` : `https://ww.act.com/wp-content/uploads/${year}/${month}/${src}`;
+					src = process.env.NODE_ENV == 'localhost' ? `https://act-main.ddev.site/wp-content/uploads/${year}/${month}/${src}` : `https://www.act.com/wp-content/uploads/${year}/${month}/${src}`;
 					$(t).attr('src', src);
 				});
 				
